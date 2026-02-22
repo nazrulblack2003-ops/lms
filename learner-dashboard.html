@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Learner Dashboard - LMS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <nav class="navbar">
+        <div class="navbar-content">
+            <div class="logo">🎓 LMS Platform</div>
+            <div class="nav-links">
+                <span id="userNameDisplay" class="text-muted"></span>
+                <span id="balanceDisplay" class="badge badge-success"></span>
+                <button class="btn btn-accent" onclick="showAddFunds()"
+                    style="padding: 0.5rem 1rem; font-size: 0.875rem;">💰 Add Funds</button>
+                <a href="#" class="nav-link" onclick="logout()">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Welcome Section -->
+        <div class="mb-4 fade-in">
+            <h1>Welcome, <span id="userName"></span>! 👋</h1>
+            <p class="text-muted">Explore courses and start your learning journey</p>
+        </div>
+
+        <!-- Alert for bank setup -->
+        <div id="bankSetupAlert" class="alert alert-warning hidden">
+            Please setup your bank information to enroll in courses.
+            <button class="btn btn-primary mt-2" onclick="showBankSetup()">Setup Bank Account</button>
+        </div>
+
+        <!-- Stats -->
+        <div class="grid grid-3 mb-4">
+            <div class="stat-card fade-in">
+                <div class="stat-label">Enrolled Courses</div>
+                <div class="stat-value" id="enrolledCount">0</div>
+            </div>
+            <div class="stat-card fade-in" style="animation-delay: 0.1s;">
+                <div class="stat-label">Completed</div>
+                <div class="stat-value" id="completedCount">0</div>
+            </div>
+            <div class="stat-card fade-in" style="animation-delay: 0.2s;">
+                <div class="stat-label">Certificates</div>
+                <div class="stat-value" id="certificatesCount">0</div>
+            </div>
+        </div>
+
+        <!-- Available Courses -->
+        <section class="mb-4">
+            <h2 class="mb-3">Available Courses</h2>
+            <div id="coursesGrid" class="grid grid-2"></div>
+        </section>
+
+        <!-- My Courses -->
+        <section class="mb-4">
+            <h2 class="mb-3">My Courses</h2>
+            <div id="myCoursesGrid" class="grid grid-2"></div>
+        </section>
+
+        <!-- My Certificates -->
+        <section class="mb-4">
+            <h2 class="mb-3">My Certificates</h2>
+            <div id="certificatesGrid" class="grid grid-2"></div>
+        </section>
+    </div>
+
+    <!-- Bank Setup Modal -->
+    <div id="bankSetupModal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Setup Bank Account</h2>
+                <button class="modal-close" onclick="closeModal('bankSetupModal')">&times;</button>
+            </div>
+            <p class="text-muted mb-3">Enter your bank account details to make payments</p>
+            <form id="bankSetupForm">
+                <div class="form-group">
+                    <label class="form-label">Bank Account Number</label>
+                    <input type="text" class="form-input" id="bankAccountNumber" required>
+                    <small class="text-muted">Use format: ACCxxxxxxxxxx</small>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Bank Secret Key</label>
+                    <input type="text" class="form-input" id="bankSecret" required>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%;">Save Bank Details</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Course Details Modal -->
+    <div id="courseDetailsModal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="courseTitle"></h2>
+                <button class="modal-close" onclick="closeModal('courseDetailsModal')">&times;</button>
+            </div>
+            <div id="courseDetailsContent"></div>
+        </div>
+    </div>
+
+    <!-- Certificate Modal -->
+    <div id="certificateModal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Certificate</h2>
+                <button class="modal-close" onclick="closeModal('certificateModal')">&times;</button>
+            </div>
+            <div id="certificateContent" class="text-center"></div>
+        </div>
+    </div>
+
+    <!-- Add Funds Modal -->
+    <div id="addFundsModal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>💰 Add Funds to Your Account</h2>
+                <button class="modal-close" onclick="closeModal('addFundsModal')">&times;</button>
+            </div>
+            <p class="text-muted mb-3">Deposit money into your bank account</p>
+            <form id="addFundsForm">
+                <div class="form-group">
+                    <label class="form-label">Amount ($)</label>
+                    <input type="number" class="form-input" id="depositAmount" min="1" step="0.01"
+                        placeholder="Enter amount" required>
+                    <small class="text-muted">Minimum: $1.00</small>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%;">Deposit Funds</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        // Check authentication
+        if (!isAuthenticated() || getUserRole() !== 'learner') {
+            window.location.href = 'index.html';
+        }
+
+        let currentUser = null;
+        let allCourses = [];
+        let myCourses = [];
+        let certificates = [];
+
+        async function init() {
+            await loadUserProfile();
+            await loadCourses();
+            await loadMyCourses();
+            await loadCertificates();
+            updateStats();
+        }
+
+        async function loadUserProfile() {
+            try {
+                const response = await apiRequest('/users/me');
+                currentUser = response.user;
+
+                document.getElementById('userName').textContent = currentUser.username;
+                document.getElementById('userNameDisplay').textContent = currentUser.username;
+
+                if (currentUser.bankAccountNumber) {
+                    document.getElementById('balanceDisplay').textContent = `Balance: $${currentUser.balance || 0}`;
+                } else {
+                    document.getElementById('bankSetupAlert').classList.remove('hidden');
+                }
+            } catch (error) {
+                showError('Failed to load profile');
+            }
+        }
+
+        async function loadCourses() {
+            try {
+                const response = await apiRequest('/courses');
+                allCourses = response.courses;
+
+                const coursesGrid = document.getElementById('coursesGrid');
+                coursesGrid.innerHTML = '';
+
+                // Filter out already enrolled courses
+                const enrolledIds = myCourses.map(c => c.courseId);
+                const availableCourses = allCourses.filter(c => !enrolledIds.includes(c.id));
+
+                if (availableCourses.length === 0) {
+                    coursesGrid.innerHTML = '<p class="text-muted">No available courses</p>';
+                    return;
+                }
+
+                availableCourses.forEach(course => {
+                    const card = document.createElement('div');
+                    card.className = 'course-card fade-in';
+                    card.innerHTML = `
+            <div class="course-header">
+              <h3 class="course-title">${course.title}</h3>
+              <div class="course-instructor">By ${course.instructorName}</div>
+            </div>
+            <div class="course-body">
+              <p class="course-description">${course.description}</p>
+            </div>
+            <div class="course-footer">
+              <div class="course-price">$${course.price}</div>
+              <button class="btn btn-primary" onclick="enrollCourse(${course.id})">Enroll</button>
+            </div>
+          `;
+                    coursesGrid.appendChild(card);
+                });
+            } catch (error) {
+                showError('Failed to load courses');
+            }
+        }
+
+        async function loadMyCourses() {
+            try {
+                const response = await apiRequest('/enrollments');
+                myCourses = response.enrollments;
+
+                const myCoursesGrid = document.getElementById('myCoursesGrid');
+                myCoursesGrid.innerHTML = '';
+
+                if (myCourses.length === 0) {
+                    myCoursesGrid.innerHTML = '<p class="text-muted">No enrolled courses yet</p>';
+                    return;
+                }
+
+                myCourses.forEach(enrollment => {
+                    const card = document.createElement('div');
+                    card.className = 'course-card fade-in';
+
+                    const statusBadge = enrollment.completed
+                        ? '<span class="badge badge-success">Completed</span>'
+                        : '<span class="badge badge-warning">In Progress</span>';
+
+                    card.innerHTML = `
+            <div class="course-header">
+              <h3 class="course-title">${enrollment.title}</h3>
+              <div class="course-instructor">By ${enrollment.instructorName}</div>
+            </div>
+            <div class="course-body">
+              <p class="course-description">${enrollment.description}</p>
+              ${statusBadge}
+            </div>
+            <div class="course-footer">
+              ${enrollment.completed
+                            ? '<button class="btn btn-success" disabled>Completed ✓</button>'
+                            : `<button class="btn btn-accent" onclick="completeCourse(${enrollment.id})">Mark as Complete</button>`
+                        }
+            </div>
+          `;
+                    myCoursesGrid.appendChild(card);
+                });
+            } catch (error) {
+                showError('Failed to load enrolled courses');
+            }
+        }
+
+        async function loadCertificates() {
+            try {
+                const response = await apiRequest('/certificates');
+                certificates = response.certificates;
+
+                const certificatesGrid = document.getElementById('certificatesGrid');
+                certificatesGrid.innerHTML = '';
+
+                if (certificates.length === 0) {
+                    certificatesGrid.innerHTML = '<p class="text-muted">No certificates yet. Complete a course to earn one!</p>';
+                    return;
+                }
+
+                certificates.forEach(cert => {
+                    const card = document.createElement('div');
+                    card.className = 'card glass-card text-center fade-in';
+                    card.innerHTML = `
+            <div style="font-size: 3rem; margin-bottom: 1rem;">🏆</div>
+            <h3>${cert.courseTitle}</h3>
+            <p class="text-muted">Instructor: ${cert.instructorName}</p>
+            <p class="text-muted">Issued: ${new Date(cert.issueDate).toLocaleDateString()}</p>
+            <div class="badge badge-primary mt-2">${cert.certificateNumber}</div>
+            <button class="btn btn-outline mt-3" onclick="viewCertificate('${cert.certificateNumber}', '${cert.courseTitle}', '${cert.issueDate}')">
+              View Certificate
+            </button>
+          `;
+                    certificatesGrid.appendChild(card);
+                });
+            } catch (error) {
+                showError('Failed to load certificates');
+            }
+        }
+
+        function updateStats() {
+            document.getElementById('enrolledCount').textContent = myCourses.length;
+            document.getElementById('completedCount').textContent = myCourses.filter(c => c.completed).length;
+            document.getElementById('certificatesCount').textContent = certificates.length;
+        }
+
+        async function showBankSetup() {
+            document.getElementById('bankSetupModal').classList.add('active');
+        }
+
+        document.getElementById('bankSetupForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const bankAccountNumber = document.getElementById('bankAccountNumber').value;
+            const bankSecret = document.getElementById('bankSecret').value;
+
+            try {
+                await apiRequest('/users/bank-setup', 'POST', { bankAccountNumber, bankSecret });
+                closeModal('bankSetupModal');
+                document.getElementById('bankSetupAlert').classList.add('hidden');
+                await loadUserProfile();
+                showSuccess('Bank details saved successfully!');
+            } catch (error) {
+                showError(error.message || 'Failed to save bank details');
+            }
+        });
+
+        async function enrollCourse(courseId) {
+            if (!currentUser.bankAccountNumber) {
+                showError('Please setup your bank account first');
+                showBankSetup();
+                return;
+            }
+
+            try {
+                await apiRequest('/enrollments', 'POST', { courseId });
+                showSuccess('Enrollment successful! Transaction is pending validation by the instructor.');
+                await loadCourses();
+                await loadMyCourses();
+                updateStats();
+            } catch (error) {
+                showError(error.message || 'Enrollment failed');
+            }
+        }
+
+        async function completeCourse(enrollmentId) {
+            try {
+                const response = await apiRequest(`/enrollments/${enrollmentId}/complete`, 'POST');
+                showSuccess(`Course completed! Certificate Number: ${response.certificateNumber}`);
+                await loadMyCourses();
+                await loadCertificates();
+                updateStats();
+            } catch (error) {
+                showError(error.message || 'Failed to complete course');
+            }
+        }
+
+        function viewCertificate(certNumber, courseTitle, issueDate) {
+            const content = document.getElementById('certificateContent');
+            content.innerHTML = `
+        <div style="border: 4px solid var(--primary); padding: 3rem; border-radius: 16px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(236, 72, 153, 0.1));">
+          <h1 style="margin-bottom: 2rem;">🎓 Certificate of Completion</h1>
+          <p class="text-muted" style="font-size: 1.125rem;">This is to certify that</p>
+          <h2 style="margin: 1rem 0; color: var(--primary);">${currentUser.username}</h2>
+          <p class="text-muted" style="font-size: 1.125rem;">has successfully completed</p>
+          <h3 style="margin: 1rem 0;">${courseTitle}</h3>
+          <p class="text-muted mt-4">Certificate Number: <strong>${certNumber}</strong></p>
+          <p class="text-muted">Issue Date: ${new Date(issueDate).toLocaleDateString()}</p>
+        </div>
+      `;
+            document.getElementById('certificateModal').classList.add('active');
+        }
+
+        function showSuccess(message) {
+            alert(message); // Simple for now
+        }
+
+        function showError(message) {
+            alert('Error: ' + message);
+        }
+
+        async function showAddFunds() {
+            if (!currentUser.bankAccountNumber) {
+                showError('Please setup your bank account first');
+                showBankSetup();
+                return;
+            }
+            document.getElementById('addFundsModal').classList.add('active');
+        }
+
+        document.getElementById('addFundsForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const amount = parseFloat(document.getElementById('depositAmount').value);
+
+            if (amount < 1) {
+                showError('Minimum deposit is $1.00');
+                return;
+            }
+
+            try {
+                await apiRequest('/users/add-funds', 'POST', { amount });
+                closeModal('addFundsModal');
+                document.getElementById('addFundsForm').reset();
+                await loadUserProfile();
+                showSuccess(`Successfully deposited $${amount.toFixed(2)} to your account!`);
+            } catch (error) {
+                showError(error.message || 'Failed to add funds');
+            }
+        });
+
+        // Initialize
+        init();
+    </script>
+</body>
+
+</html>

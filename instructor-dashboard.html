@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instructor Dashboard - LMS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <nav class="navbar">
+        <div class="navbar-content">
+            <div class="logo">🎓 LMS Platform - Instructor</div>
+            <div class="nav-links">
+                <span id="userNameDisplay" class="text-muted"></span>
+                <span id="balanceDisplay" class="badge badge-success"></span>
+                <a href="#" class="nav-link" onclick="logout()">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Welcome Section -->
+        <div class="mb-4 fade-in">
+            <h1>Instructor Dashboard 👨‍🏫</h1>
+            <p class="text-muted">Manage your courses and validate transactions</p>
+        </div>
+
+        <!-- Stats -->
+        <div class="grid grid-3 mb-4">
+            <div class="stat-card fade-in">
+                <div class="stat-label">My Courses</div>
+                <div class="stat-value" id="coursesCount">0</div>
+            </div>
+            <div class="stat-card fade-in" style="animation-delay: 0.1s;">
+                <div class="stat-label">Pending Transactions</div>
+                <div class="stat-value" id="pendingCount">0</div>
+            </div>
+            <div class="stat-card fade-in" style="animation-delay: 0.2s;">
+                <div class="stat-label">Total Earnings</div>
+                <div class="stat-value" id="earningsAmount">$0</div>
+            </div>
+        </div>
+
+        <!-- Upload Course -->
+        <section class="mb-4">
+            <div class="card">
+                <h2 class="mb-3">Upload New Course</h2>
+                <form id="uploadCourseForm">
+                    <div class="grid grid-2">
+                        <div class="form-group">
+                            <label class="form-label">Course Title</label>
+                            <input type="text" class="form-input" id="courseTitle" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Price ($)</label>
+                            <input type="number" class="form-input" id="coursePrice" step="0.01" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-textarea" id="courseDescription" required></textarea>
+                    </div>
+                    <div class="grid grid-2">
+                        <div class="form-group">
+                            <label class="form-label">Video URL</label>
+                            <input type="url" class="form-input" id="courseVideoUrl">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Materials</label>
+                            <input type="text" class="form-input" id="courseMaterials" placeholder="PDF, Videos, etc.">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Upload Course</button>
+                </form>
+            </div>
+        </section>
+
+        <!-- Pending Transactions -->
+        <section class="mb-4">
+            <h2 class="mb-3">Pending Transactions</h2>
+            <div id="transactionsContainer"></div>
+        </section>
+
+        <!-- My Courses -->
+        <section class="mb-4">
+            <h2 class="mb-3">My Courses</h2>
+            <div id="coursesGrid" class="grid grid-2"></div>
+        </section>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        // Check authentication
+        if (!isAuthenticated() || getUserRole() !== 'instructor') {
+            window.location.href = 'index.html';
+        }
+
+        let currentUser = null;
+        let myCourses = [];
+        let pendingTransactions = [];
+
+        async function init() {
+            await loadUserProfile();
+            await loadMyCourses();
+            await loadPendingTransactions();
+            updateStats();
+        }
+
+        async function loadUserProfile() {
+            try {
+                const response = await apiRequest('/users/me');
+                currentUser = response.user;
+
+                document.getElementById('userNameDisplay').textContent = currentUser.username;
+                document.getElementById('balanceDisplay').textContent = `Balance: $${currentUser.balance || 0}`;
+            } catch (error) {
+                showError('Failed to load profile');
+            }
+        }
+
+        async function loadMyCourses() {
+            try {
+                const response = await apiRequest('/instructor/courses');
+                myCourses = response.courses;
+
+                const coursesGrid = document.getElementById('coursesGrid');
+                coursesGrid.innerHTML = '';
+
+                if (myCourses.length === 0) {
+                    coursesGrid.innerHTML = '<p class="text-muted">No courses uploaded yet</p>';
+                    return;
+                }
+
+                myCourses.forEach(course => {
+                    const card = document.createElement('div');
+                    card.className = 'course-card fade-in';
+
+                    const lumpSumBadge = course.lumpSumPaid
+                        ? '<span class="badge badge-success">Lump Sum Received</span>'
+                        : '<span class="badge badge-warning">Pending Payment</span>';
+
+                    card.innerHTML = `
+            <div class="course-header">
+              <h3 class="course-title">${course.title}</h3>
+              <div class="course-instructor">Uploaded: ${new Date(course.uploadDate).toLocaleDateString()}</div>
+            </div>
+            <div class="course-body">
+              <p class="course-description">${course.description}</p>
+              ${lumpSumBadge}
+            </div>
+            <div class="course-footer">
+              <div class="course-price">$${course.price}</div>
+              <button class="btn btn-outline" onclick="editCourse(${course.id})">Edit</button>
+            </div>
+          `;
+                    coursesGrid.appendChild(card);
+                });
+            } catch (error) {
+                showError('Failed to load courses');
+            }
+        }
+
+        async function loadPendingTransactions() {
+            try {
+                const response = await apiRequest('/transactions/pending');
+                pendingTransactions = response.transactions;
+
+                const container = document.getElementById('transactionsContainer');
+                container.innerHTML = '';
+
+                if (pendingTransactions.length === 0) {
+                    container.innerHTML = '<p class="text-muted">No pending transactions</p>';
+                    return;
+                }
+
+                const card = document.createElement('div');
+                card.className = 'card';
+
+                let tableHTML = `
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Learner</th>
+                <th>Course</th>
+                <th>Amount</th>
+                <th>Date</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+        `;
+
+                pendingTransactions.forEach(txn => {
+                    tableHTML += `
+            <tr>
+              <td>${txn.learnerName}</td>
+              <td>${txn.courseTitle}</td>
+              <td>$${txn.amount}</td>
+              <td>${new Date(txn.transactionDate).toLocaleDateString()}</td>
+              <td>
+                <button class="btn btn-success" style="padding: 0.5rem 1rem; margin-right: 0.5rem;" onclick="validateTransaction(${txn.id}, true)">Approve</button>
+                <button class="btn btn-danger" style="padding: 0.5rem 1rem;" onclick="validateTransaction(${txn.id}, false)">Reject</button>
+              </td>
+            </tr>
+          `;
+                });
+
+                tableHTML += '</tbody></table>';
+                card.innerHTML = tableHTML;
+                container.appendChild(card);
+            } catch (error) {
+                showError('Failed to load transactions');
+            }
+        }
+
+        function updateStats() {
+            document.getElementById('coursesCount').textContent = myCourses.length;
+            document.getElementById('pendingCount').textContent = pendingTransactions.length;
+            document.getElementById('earningsAmount').textContent = '$' + (currentUser?.balance || 0);
+        }
+
+        document.getElementById('uploadCourseForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const courseData = {
+                title: document.getElementById('courseTitle').value,
+                description: document.getElementById('courseDescription').value,
+                price: parseFloat(document.getElementById('coursePrice').value),
+                videoUrl: document.getElementById('courseVideoUrl').value,
+                materials: document.getElementById('courseMaterials').value
+            };
+
+            try {
+                await apiRequest('/courses', 'POST', courseData);
+                showSuccess('Course uploaded successfully!');
+                document.getElementById('uploadCourseForm').reset();
+                await loadMyCourses();
+                updateStats();
+            } catch (error) {
+                showError(error.message || 'Failed to upload course');
+            }
+        });
+
+        async function validateTransaction(transactionId, approve) {
+            const action = approve ? 'approve' : 'reject';
+
+            if (confirm(`Are you sure you want to ${action} this transaction?`)) {
+                try {
+                    await apiRequest(`/transactions/${transactionId}/validate`, 'POST', { approve });
+                    showSuccess(`Transaction ${approve ? 'approved' : 'rejected'} successfully!`);
+                    await loadPendingTransactions();
+                    await loadMyCourses();
+                    await loadUserProfile();
+                    updateStats();
+                } catch (error) {
+                    showError(error.message || 'Failed to validate transaction');
+                }
+            }
+        }
+
+        function editCourse(courseId) {
+            showSuccess('Course edit feature coming soon!');
+        }
+
+        function showSuccess(message) {
+            alert(message);
+        }
+
+        function showError(message) {
+            alert('Error: ' + message);
+        }
+
+        // Initialize
+        init();
+    </script>
+</body>
+
+</html>

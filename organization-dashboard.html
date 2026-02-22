@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Organization Dashboard - LMS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <nav class="navbar">
+        <div class="navbar-content">
+            <div class="logo">🎓 LMS Platform - Organization</div>
+            <div class="nav-links">
+                <span id="userNameDisplay" class="text-muted"></span>
+                <a href="#" class="nav-link" onclick="logout()">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Welcome Section -->
+        <div class="mb-4 fade-in">
+            <h1>Organization Dashboard 🏢</h1>
+            <p class="text-muted">System overview and analytics</p>
+        </div>
+
+        <!-- Stats -->
+        <div class="grid grid-3 mb-4">
+            <div class="stat-card fade-in">
+                <div class="stat-label">Total Users</div>
+                <div class="stat-value" id="totalUsers">0</div>
+            </div>
+            <div class="stat-card fade-in" style="animation-delay: 0.1s;">
+                <div class="stat-label">Total Courses</div>
+                <div class="stat-value" id="totalCourses">0</div>
+            </div>
+            <div class="stat-card fade-in" style="animation-delay: 0.2s;">
+                <div class="stat-label">Total Enrollments</div>
+                <div class="stat-value" id="totalEnrollments">0</div>
+            </div>
+        </div>
+
+        <div class="grid grid-2 mb-4">
+            <div class="stat-card fade-in" style="animation-delay: 0.3s;">
+                <div class="stat-label">Total Transactions</div>
+                <div class="stat-value" id="totalTransactions">0</div>
+            </div>
+            <div class="stat-card fade-in" style="animation-delay: 0.4s;">
+                <div class="stat-label">Total Revenue</div>
+                <div class="stat-value" id="totalRevenue">$0</div>
+            </div>
+        </div>
+
+        <!-- All Transactions -->
+        <section class="mb-4">
+            <h2 class="mb-3">All Transactions</h2>
+            <div id="transactionsContainer"></div>
+        </section>
+
+        <!-- System Activity -->
+        <section class="mb-4">
+            <h2 class="mb-3">Recent Activity</h2>
+            <div class="card">
+                <p class="text-muted">System monitoring and activity logs</p>
+                <div id="activityLog" class="mt-3"></div>
+            </div>
+        </section>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        // Check authentication
+        if (!isAuthenticated() || getUserRole() !== 'organization') {
+            window.location.href = 'index.html';
+        }
+
+        let stats = {};
+        let allTransactions = [];
+
+        async function init() {
+            await loadStats();
+            await loadAllTransactions();
+        }
+
+        async function loadStats() {
+            try {
+                const response = await apiRequest('/stats');
+                stats = response.stats;
+
+                document.getElementById('totalUsers').textContent = stats.totalUsers;
+                document.getElementById('totalCourses').textContent = stats.totalCourses;
+                document.getElementById('totalEnrollments').textContent = stats.totalEnrollments;
+                document.getElementById('totalTransactions').textContent = stats.totalTransactions;
+                document.getElementById('totalRevenue').textContent = '$' + (stats.totalRevenue || 0);
+            } catch (error) {
+                showError('Failed to load stats');
+            }
+        }
+
+        async function loadAllTransactions() {
+            try {
+                const response = await apiRequest('/transactions');
+                allTransactions = response.transactions;
+
+                const container = document.getElementById('transactionsContainer');
+                container.innerHTML = '';
+
+                if (allTransactions.length === 0) {
+                    container.innerHTML = '<p class="text-muted">No transactions yet</p>';
+                    return;
+                }
+
+                const card = document.createElement('div');
+                card.className = 'card';
+
+                let tableHTML = `
+          <table class="table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Course</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody>
+        `;
+
+                allTransactions.forEach(txn => {
+                    const statusBadge =
+                        txn.status === 'completed' ? 'badge-success' :
+                            txn.status === 'validated' ? 'badge-primary' :
+                                txn.status === 'pending' ? 'badge-warning' : 'badge-danger';
+
+                    tableHTML += `
+            <tr>
+              <td>#${txn.id}</td>
+              <td>${txn.courseTitle || 'N/A'}</td>
+              <td>$${txn.amount}</td>
+              <td><span class="badge ${statusBadge}">${txn.status}</span></td>
+              <td>${new Date(txn.transactionDate).toLocaleString()}</td>
+            </tr>
+          `;
+                });
+
+                tableHTML += '</tbody></table>';
+                card.innerHTML = tableHTML;
+                container.appendChild(card);
+
+                updateActivityLog();
+            } catch (error) {
+                showError('Failed to load transactions');
+            }
+        }
+
+        function updateActivityLog() {
+            const activityLog = document.getElementById('activityLog');
+            const recentTransactions = allTransactions.slice(0, 5);
+
+            if (recentTransactions.length === 0) {
+                activityLog.innerHTML = '<p class="text-muted">No recent activity</p>';
+                return;
+            }
+
+            let html = '';
+            recentTransactions.forEach((txn, index) => {
+                const icon = txn.status === 'completed' ? '✅' :
+                    txn.status === 'validated' ? '🔄' :
+                        txn.status === 'pending' ? '⏳' : '❌';
+
+                html += `
+          <div class="flex items-center justify-between" style="padding: 0.75rem 0; border-bottom: 1px solid var(--border);">
+            <div>
+              <span style="margin-right: 0.5rem;">${icon}</span>
+              <span>Transaction #${txn.id} - ${txn.courseTitle || 'Unknown'}</span>
+            </div>
+            <span class="text-muted">${new Date(txn.transactionDate).toLocaleDateString()}</span>
+          </div>
+        `;
+            });
+
+            activityLog.innerHTML = html;
+        }
+
+        function showError(message) {
+            alert('Error: ' + message);
+        }
+
+        // Initialize
+        init();
+
+        // Auto-refresh every 30 seconds
+        setInterval(() => {
+            loadStats();
+            loadAllTransactions();
+        }, 30000);
+    </script>
+</body>
+
+</html>
